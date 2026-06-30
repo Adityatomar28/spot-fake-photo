@@ -1,0 +1,25 @@
+# Local Python virtual environment
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Local Node modules
+node_modules/
+frontend/node_modules/
+.npm-cache/
+
+# Labeled training images (only used for offline training)
+real/
+screen/
+
+# Git metadata
+.git/
+.gitignore
+
+# macOS metadata
+.DS_Store
+
+# Temporary / test files
+scratch/
+test_predict.py
