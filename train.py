@@ -6,6 +6,7 @@ import time
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix, roc_curve
@@ -63,6 +64,9 @@ def main():
 
     best_score = -1.0
     best_params = None
+    best_model_type = None
+
+    # --- Logistic regression grid (linear) ---
     for C in [0.01, 0.1, 1, 10, 100]:
         for solver, l1_ratio, label in [
             ("lbfgs", 0.0, "l2"),
@@ -77,25 +81,42 @@ def main():
             )
             scores = cross_val_predict(clf_candidate, Xs, y, cv=skf)
             score = accuracy_score(y, scores)
-            print(f"C={C}, penalty={label}, cv acc={score:.4f}")
+            print(f"[logreg] C={C}, penalty={label}, cv acc={score:.4f}")
             if score > best_score:
                 best_score = score
-                best_params = {
-                    "C": C,
-                    "solver": solver,
-                    "l1_ratio": l1_ratio,
-                    "label": label,
-                }
+                best_params = {"C": C, "solver": solver, "l1_ratio": l1_ratio, "label": label}
+                best_model_type = "logreg"
 
-    print(f"\nBest hyperparams: C={best_params['C']}, penalty={best_params['label']}, cv acc={best_score:.4f}")
+    # --- RBF SVM grid (non-linear) ---
+    for C in [0.1, 1, 10, 100]:
+        for gamma in ["scale", 0.01, 0.1]:
+            clf_candidate = SVC(
+                C=C, kernel="rbf", gamma=gamma,
+                class_weight="balanced", probability=True,
+            )
+            scores = cross_val_predict(clf_candidate, Xs, y, cv=skf)
+            score = accuracy_score(y, scores)
+            print(f"[svm-rbf] C={C}, gamma={gamma}, cv acc={score:.4f}")
+            if score > best_score:
+                best_score = score
+                best_params = {"C": C, "gamma": gamma}
+                best_model_type = "svm"
 
-    clf = LogisticRegression(
-        C=best_params["C"],
-        solver=best_params["solver"],
-        l1_ratio=best_params["l1_ratio"],
-        max_iter=2000,
-        class_weight="balanced",
-    )
+    print(f"\nBest model: {best_model_type}, params={best_params}, cv acc={best_score:.4f}")
+
+    if best_model_type == "logreg":
+        clf = LogisticRegression(
+            C=best_params["C"],
+            solver=best_params["solver"],
+            l1_ratio=best_params["l1_ratio"],
+            max_iter=2000,
+            class_weight="balanced",
+        )
+    else:
+        clf = SVC(
+            C=best_params["C"], kernel="rbf", gamma=best_params["gamma"],
+            class_weight="balanced", probability=True,
+        )
 
     y_pred = cross_val_predict(clf, Xs, y, cv=skf)
     cv_acc = accuracy_score(y, y_pred)
@@ -104,6 +125,14 @@ def main():
     print(f"\n{n_splits}-fold cross-validated accuracy: {cv_acc:.3f}")
     print("Confusion matrix [rows=true 0/1, cols=pred 0/1]:")
     print(cm)
+
+    # --- Misclassified images: which exact files are wrong ---
+    wrong = np.where(y_pred != y)[0]
+    print(f"\nMisclassified ({len(wrong)}):")
+    for i in wrong:
+        true_label = "real" if y[i] == 0 else "screen"
+        pred_label = "real" if y_pred[i] == 0 else "screen"
+        print(f"  {paths[i]}  true={true_label} pred={pred_label}")
 
     clf.fit(Xs, y)
 
@@ -121,6 +150,7 @@ def main():
         pickle.dump({
             "scaler": scaler,
             "clf": clf,
+            "model_type": best_model_type,
             "feature_names": FEATURE_NAMES,
             "threshold": best_threshold,
             "cv_accuracy": cv_acc,

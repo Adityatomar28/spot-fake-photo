@@ -6,6 +6,8 @@ FEATURE_NAMES = [
     "fft_high_freq_energy",
     "fft_spectral_flatness",
     "fft_peak_strength",
+    "fft_angular_peak",
+    "fft_angular_entropy",
     "lbp_entropy",
     "highlight_clip_ratio",
     "glare_blob_ratio",
@@ -15,6 +17,7 @@ FEATURE_NAMES = [
     "sharpness_mean",
     "edge_line_density",
     "rgb_channel_mismatch",
+    "block_artifact_score",
 ]
 
 
@@ -53,6 +56,37 @@ def fft_features(gray):
     peak_strength = top_sum / (mid_vals.sum() + 1e-8)
 
     return float(peak_ratio), float(high_freq_energy), float(spectral_flatness), float(peak_strength)
+
+
+def fft_angular_features(gray):
+    """Captures directional moire/aliasing structure that the radial-only
+    fft_features() above misses. Screen recaptures often produce sharp,
+    directional (often diagonal) peaks in the spectrum rather than just
+    elevated radial energy, so binning energy by angle and measuring how
+    concentrated it is gives a complementary signal."""
+    f = np.fft.fft2(gray.astype(np.float32))
+    fshift = np.fft.fftshift(f)
+    mag = np.log1p(np.abs(fshift))
+
+    h, w = mag.shape
+    cy, cx = h // 2, w // 2
+
+    r_low = max(2, min(h, w) // 20)
+    yy, xx = np.ogrid[:h, :w]
+    dist = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)
+    theta = np.arctan2(yy - cy, xx - cx)
+    mask = (dist > r_low) & (dist <= min(h, w) // 2)
+
+    n_bins = 16
+    bin_idx = ((theta[mask] + np.pi) / (2 * np.pi) * n_bins).astype(int) % n_bins
+    bin_sums = np.bincount(bin_idx, weights=mag[mask], minlength=n_bins)
+    bin_sums = bin_sums / (bin_sums.sum() + 1e-8)
+
+    angular_peak = bin_sums.max()
+    nonzero = bin_sums[bin_sums > 0]
+    angular_entropy = -(nonzero * np.log2(nonzero)).sum()
+
+    return float(angular_peak), float(angular_entropy)
 
 
 def lbp_entropy(gray):
@@ -137,6 +171,19 @@ def edge_line_density(gray):
     return float(n_lines) / (area / 1e5)
 
 
+def block_artifact_score(gray):
+    """Cheap proxy for 8x8 JPEG block boundaries, which show up when a
+    screen photo has been recompressed (e.g. screenshot of a screenshot,
+    or messaging-app recompression). Measures how much horizontal gradient
+    energy concentrates at columns that are multiples of 8 vs elsewhere."""
+    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    col_energy = np.abs(gx).mean(axis=0)
+    if col_energy.size < 8:
+        return 0.0
+    block_cols = col_energy[7::8]
+    return float(block_cols.mean() / (col_energy.mean() + 1e-8))
+
+
 def extract_features(img_path_or_array):
     if isinstance(img_path_or_array, str):
         img = cv2.imread(img_path_or_array)
@@ -149,6 +196,7 @@ def extract_features(img_path_or_array):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     peak_ratio, hf_energy, fft_flatness, fft_peak_strength = fft_features(gray)
+    angular_peak, angular_entropy = fft_angular_features(gray)
     lbp_e = lbp_entropy(gray)
     clip_ratio = highlight_clip_ratio(img)
     glare_ratio = glare_blob_ratio(img)
@@ -156,12 +204,15 @@ def extract_features(img_path_or_array):
     sharp_std, sharp_mean = sharpness_grid(gray)
     line_density = edge_line_density(gray)
     rgb_mismatch = rgb_channel_mismatch(img)
+    block_score = block_artifact_score(gray)
 
     feats = np.array([
         peak_ratio,
         hf_energy,
         fft_flatness,
         fft_peak_strength,
+        angular_peak,
+        angular_entropy,
         lbp_e,
         clip_ratio,
         glare_ratio,
@@ -171,6 +222,7 @@ def extract_features(img_path_or_array):
         sharp_mean,
         line_density,
         rgb_mismatch,
+        block_score,
     ], dtype=np.float64)
 
     return feats
