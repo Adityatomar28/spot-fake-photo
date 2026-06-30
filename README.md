@@ -41,9 +41,9 @@ sales-code-ai/
 ## Setup
 
 ```bash
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install opencv-python numpy scikit-learn
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -53,7 +53,7 @@ pip install opencv-python numpy scikit-learn
 Put your labeled images in `real/` and `screen/` (any of `.jpg`, `.jpeg`, `.png`, case-insensitive), then:
 
 ```bash
-python train.py
+python3 train.py
 ```
 
 This prints:
@@ -85,6 +85,36 @@ As of the latest training run: **~94.3% 5-fold cross-validated accuracy** on 140
 2. Add more training images that resemble the failure patterns above — small-dataset classifiers usually gain more from a handful of well-chosen new examples than from extra feature engineering.
 3. Keep the `real/` and `screen/` folders balanced in style (lighting, backgrounds, compression source) so the model learns to distinguish *screen recapture artifacts*, not incidental differences between your two photo sources.
 4. Consider nested cross-validation if you need an unbiased accuracy estimate — the current grid search picks the best model using the same folds it reports accuracy on, which is slightly optimistic.
+
+## Web App / Live Demo
+
+The project includes an interactive web interface with drag-and-drop file upload and webcam capability to demonstrate live predictions.
+
+### Production serving (Unified application)
+Build the frontend, then start the server:
+```bash
+# Build Vite React frontend
+cd frontend
+npm install
+npm run build
+cd ..
+
+# Start the Flask API and static web server
+python3 demo_server.py
+```
+Open `http://localhost:5000` in your web browser.
+
+### Development mode (Concurrent serving)
+Run the backend and frontend dev server in separate shells:
+```bash
+# Shell 1: Start backend on port 5000
+python3 demo_server.py
+
+# Shell 2: Start frontend on port 5173
+cd frontend
+npm run dev
+```
+Open `http://localhost:5173`. Any requests to `/predict` will be proxied automatically to port 5000.
 
 ## Notes
 

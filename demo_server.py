@@ -13,15 +13,21 @@ Then open http://localhost:5000 in your browser.
 """
 
 import base64
+import os
 import pickle
 
 import cv2
 import numpy as np
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_from_directory
 
 from features import extract_features
 
-app = Flask(__name__)
+FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "frontend", "dist"))
+
+if os.path.exists(FRONTEND_DIST):
+    app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="")
+else:
+    app = Flask(__name__)
 
 with open("model.pkl", "rb") as f:
     BUNDLE = pickle.load(f)
@@ -93,7 +99,16 @@ document.getElementById('capture').onclick = async () => {
 
 @app.route("/")
 def index():
+    if os.path.exists(FRONTEND_DIST):
+        return send_from_directory(FRONTEND_DIST, "index.html")
     return Response(PAGE, mimetype="text/html")
+
+
+@app.errorhandler(404)
+def not_found(e):
+    if os.path.exists(FRONTEND_DIST):
+        return send_from_directory(FRONTEND_DIST, "index.html")
+    return jsonify({"error": "Not found"}), 404
 
 
 @app.route("/predict", methods=["POST"])
@@ -113,4 +128,4 @@ def predict():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5001)

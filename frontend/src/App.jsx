@@ -175,15 +175,36 @@ function DemoSection() {
     setLoading(true)
     setResult(null)
 
-    window.setTimeout(() => {
-      const isScreen = selected.name.toLowerCase().includes('screen')
-      setResult({
-        label: isScreen ? 'Screen Photo' : 'Real Photo',
-        confidence: isScreen ? 91 : 96,
-        type: isScreen ? 'screen' : 'real',
-      })
-      setLoading(false)
-    }, 1200)
+    const reader = new FileReader()
+    reader.onloadend = async () => {
+      try {
+        const base64data = reader.result
+        const res = await fetch('/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64data }),
+        })
+        if (!res.ok) throw new Error('API request failed')
+        const data = await res.json()
+        const isScreen = data.prob > data.threshold
+        setResult({
+          label: isScreen ? 'Screen Photo' : 'Real Photo',
+          confidence: Math.round((isScreen ? data.prob : (1 - data.prob)) * 100),
+          type: isScreen ? 'screen' : 'real',
+        })
+      } catch (err) {
+        console.error('API Error, falling back to local simulation:', err)
+        const isScreen = selected.name.toLowerCase().includes('screen')
+        setResult({
+          label: isScreen ? 'Screen Photo (Offline Fallback)' : 'Real Photo (Offline Fallback)',
+          confidence: isScreen ? 91 : 96,
+          type: isScreen ? 'screen' : 'real',
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+    reader.readAsDataURL(selected)
   }
 
   return (
